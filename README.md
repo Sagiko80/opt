@@ -11,8 +11,10 @@ SELECT
     em.message AS SSISErrorMessage
 FROM msdb.dbo.sysjobhistory h
 JOIN msdb.dbo.sysjobs j ON h.job_id = j.job_id
-LEFT JOIN SSISDB.internal.executions e ON j.name = e.job_name
+JOIN msdb.dbo.sysjobsteps s ON j.job_id = s.job_id AND h.step_id = s.step_id
+LEFT JOIN SSISDB.internal.executions e ON e.execution_id = CAST(h.instance_id AS BIGINT)  -- Match SSIS execution
 LEFT JOIN SSISDB.internal.event_messages em ON e.execution_id = em.operation_id AND em.event_name = 'OnError'
-WHERE h.run_status = 0 -- רק כשלונות
+WHERE h.run_status = 0 -- Only failed steps
 AND h.run_date >= CONVERT(INT, FORMAT(DATEADD(DAY, -3, GETDATE()), 'yyyyMMdd'))
+AND s.command LIKE '%dtexec%' -- Ensure step executes an SSIS package
 ORDER BY ErrorTime DESC;
