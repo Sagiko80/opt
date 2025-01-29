@@ -25,7 +25,8 @@ FROM msdb.dbo.sysjobhistory h
 JOIN msdb.dbo.sysjobs j ON h.job_id = j.job_id
 JOIN msdb.dbo.sysjobsteps s ON j.job_id = s.job_id AND h.step_id = s.step_id
 LEFT JOIN SSISDB.internal.executions e ON CAST(h.instance_id AS BIGINT) = e.execution_id  
-WHERE h.run_status = 0 
+WHERE h.run_status = 0 -- Only failed steps
 AND h.run_date >= CONVERT(INT, FORMAT(DATEADD(DAY, -3, GETDATE()), 'yyyyMMdd'))
-AND s.command LIKE '%dtexec%'  
+AND s.command LIKE '%dtexec%'  -- Ensure step executes an SSIS package
+AND e.execution_status = 4  -- Only failed SSIS executions
 ORDER BY ErrorTime DESC;
