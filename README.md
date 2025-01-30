@@ -19,11 +19,9 @@ SELECT
     jf.RunDateTime,
     jf.run_status,
     jf.SQLAgentErrorMessage,
-    CAST(e.message AS NVARCHAR(MAX)) AS SSISErrorMessage
+    CAST(m.message AS NVARCHAR(MAX)) AS SSISErrorMessage
 FROM JobFailures jf
-LEFT JOIN SSISDB.dbo.internal.executions e WITH (NOLOCK)
-    ON jf.instance_id = e.job_id
-LEFT JOIN SSISDB.dbo.internal.operation_messages m WITH (NOLOCK)
-    ON e.execution_id = m.operation_id
+LEFT JOIN SSISDB.catalog.operation_messages m WITH (NOLOCK)
+    ON jf.instance_id = m.operation_id 
     AND m.message_type = 120
 ORDER BY jf.RunDateTime DESC;
