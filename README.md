@@ -1,12 +1,12 @@
 SELECT 
-    o.execution_id,
-    o.package_name,
-    o.start_time,
-    o.end_time,
-    om.message_source_name,
-    om.message
-FROM SSISDB.internal.operations o
-JOIN SSISDB.internal.operation_messages om 
-    ON o.execution_id = om.operation_id
-WHERE om.message_type = 4  -- סוג 4 מציין שגיאה
-ORDER BY o.start_time DESC;
+    j.name AS JobName,
+    h.step_name,
+    CONVERT(DATETIME, 
+        CAST(h.run_date AS CHAR(8)) + ' ' + 
+        STUFF(STUFF(RIGHT('000000' + CAST(h.run_time AS VARCHAR(6)), 6), 3, 0, ':'), 6, 0, ':')
+    ) AS RunDateTime,
+    h.run_status
+FROM msdb.dbo.sysjobhistory h
+JOIN msdb.dbo.sysjobs j ON h.job_id = j.job_id
+WHERE h.run_status = 0  -- 0 = כישלון
+ORDER BY RunDateTime DESC;
