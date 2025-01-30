@@ -8,7 +8,8 @@ WITH JobFailures AS (
             STUFF(STUFF(RIGHT('000000' + CAST(h.run_time AS VARCHAR(6)), 6), 3, 0, ':'), 6, 0, ':')
         ) AS RunDateTime,
         h.run_status,
-        h.message COLLATE SQL_Latin1_General_CP1_CI_AS AS SQLAgentErrorMessage
+        h.message COLLATE SQL_Latin1_General_CP1_CI_AS AS SQLAgentErrorMessage,
+        h.instance_id
     FROM msdb.dbo.sysjobhistory h WITH (NOLOCK)
     JOIN msdb.dbo.sysjobs j WITH (NOLOCK) ON h.job_id = j.job_id
     WHERE h.run_status = 0
@@ -22,7 +23,8 @@ SELECT
     CAST(m.message AS NVARCHAR(MAX)) AS SSISErrorMessage
 FROM JobFailures jf
 INNER JOIN SSISDB.catalog.executions e WITH (NOLOCK)
-    ON jf.job_id = e.job_id
+    ON e.start_time <= jf.RunDateTime
+    AND e.end_time >= jf.RunDateTime
 INNER JOIN SSISDB.catalog.operation_messages m WITH (NOLOCK)
     ON e.execution_id = m.operation_id
     AND m.message_type = 120
