@@ -23,10 +23,10 @@ SELECT
     CAST(m.message AS NVARCHAR(MAX)) AS SSISErrorMessage
 FROM JobFailures jf
 INNER JOIN SSISDB.catalog.executions e WITH (NOLOCK)
-    ON e.start_time <= jf.RunDateTime
-    AND e.end_time >= jf.RunDateTime
+    ON e.start_time <= DATEADD(MINUTE, 1, jf.RunDateTime)  -- Add 1 minute buffer to the start time
+    AND e.end_time >= DATEADD(MINUTE, -1, jf.RunDateTime)  -- Subtract 1 minute buffer from the end time
 INNER JOIN SSISDB.catalog.operation_messages m WITH (NOLOCK)
     ON e.execution_id = m.operation_id
-    AND m.message_type = 120  -- Filter to only SSIS error messages
+    AND m.message_type = 120  -- Focus on error messages
     AND m.message IS NOT NULL
 ORDER BY jf.RunDateTime DESC;
