@@ -11,7 +11,7 @@ WITH JobFailures AS (
         h.message COLLATE SQL_Latin1_General_CP1_CI_AS AS SQLAgentErrorMessage
     FROM msdb.dbo.sysjobhistory h WITH (NOLOCK)
     JOIN msdb.dbo.sysjobs j WITH (NOLOCK) ON h.job_id = j.job_id
-    WHERE h.run_status = 0  -- Filter only failed jobs
+    WHERE h.run_status = 0
 )
 SELECT 
     jf.JobName,
@@ -22,8 +22,8 @@ SELECT
     CAST(m.message AS NVARCHAR(MAX)) AS SSISErrorMessage
 FROM JobFailures jf
 LEFT JOIN SSISDB.catalog.executions e WITH (NOLOCK)
-    ON jf.job_id = e.job_id  -- Join on job_id, this links to SSIS execution
+    ON jf.job_id = e.job_id
 LEFT JOIN SSISDB.catalog.operation_messages m WITH (NOLOCK)
-    ON e.execution_id = m.operation_id  -- Link execution_id to operation_messages
-    AND m.message_type = 120  -- Only SSIS error messages
+    ON e.execution_id = m.operation_id
+    AND m.message_type = 120
 ORDER BY jf.RunDateTime DESC;
