@@ -2,6 +2,7 @@ WITH JobFailures AS (
     SELECT 
         j.name AS JobName,
         h.job_id,
+        h.instance_id,
         h.step_name COLLATE SQL_Latin1_General_CP1_CI_AS AS step_name,
         CONVERT(DATETIME, 
             CAST(h.run_date AS CHAR(8)) + ' ' + 
@@ -22,7 +23,7 @@ SELECT
     CAST(m.message AS NVARCHAR(MAX)) AS SSISErrorMessage
 FROM JobFailures jf
 LEFT JOIN SSISDB.catalog.executions e WITH (NOLOCK)
-    ON e.job_name = jf.JobName
+    ON jf.instance_id = e.session_id
 LEFT JOIN SSISDB.catalog.operation_messages m WITH (NOLOCK)
     ON e.execution_id = m.operation_id
     AND m.message_type = 120
