@@ -2,7 +2,6 @@ WITH JobFailures AS (
     SELECT 
         j.name AS JobName,
         h.job_id,
-        h.instance_id,
         h.step_name COLLATE SQL_Latin1_General_CP1_CI_AS AS step_name,
         CONVERT(DATETIME, 
             CAST(h.run_date AS CHAR(8)) + ' ' + 
@@ -12,7 +11,8 @@ WITH JobFailures AS (
         h.message COLLATE SQL_Latin1_General_CP1_CI_AS AS SQLAgentErrorMessage
     FROM msdb.dbo.sysjobhistory h WITH (NOLOCK)
     JOIN msdb.dbo.sysjobs j WITH (NOLOCK) ON h.job_id = j.job_id
-    WHERE h.run_status = 0
+    WHERE h.run_status = 0  -- Only failed jobs
+      AND h.step_name LIKE '%SSIS%'  -- Assuming the job step involves SSIS execution
 )
 SELECT 
     jf.JobName,
@@ -23,8 +23,8 @@ SELECT
     CAST(m.message AS NVARCHAR(MAX)) AS SSISErrorMessage
 FROM JobFailures jf
 LEFT JOIN SSISDB.catalog.executions e WITH (NOLOCK)
-    ON e.execution_id = jf.instance_id
+    ON e.package_name LIKE '%SSIS%'  -- Adjust the package filter if necessary
 LEFT JOIN SSISDB.catalog.operation_messages m WITH (NOLOCK)
     ON e.execution_id = m.operation_id
-    AND m.message_type = 120
+    AND m.message_type = 120  -- SSIS-specific error message type
 ORDER BY jf.RunDateTime DESC;
