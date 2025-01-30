@@ -22,7 +22,7 @@ SELECT
     CAST(m.message AS NVARCHAR(MAX)) AS SSISErrorMessage
 FROM JobFailures jf
 LEFT JOIN SSISDB.catalog.executions e WITH (NOLOCK)
-    ON jf.job_id = e.job_id
+    ON e.job_name = jf.JobName
 LEFT JOIN SSISDB.catalog.operation_messages m WITH (NOLOCK)
     ON e.execution_id = m.operation_id
     AND m.message_type = 120
