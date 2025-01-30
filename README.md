@@ -27,6 +27,6 @@ INNER JOIN SSISDB.catalog.executions e WITH (NOLOCK)
     AND e.end_time >= jf.RunDateTime
 INNER JOIN SSISDB.catalog.operation_messages m WITH (NOLOCK)
     ON e.execution_id = m.operation_id
-    AND m.message_type = 120
+    AND m.message_type IN (110, 120)  -- Include warning messages (110) and error messages (120)
     AND m.message IS NOT NULL
 ORDER BY jf.RunDateTime DESC;
