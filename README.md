@@ -13,7 +13,8 @@ WITH JobHistory AS (
             CAST(CONVERT(DATETIME, Cast(run_date AS CHAR(8)) + ' ' + 
             Stuff(Stuff(RIGHT('000000' + Cast(run_time AS VARCHAR(6)), 6), 3, 0, ':'), 6, 0, ':')) 
             AS DATETIME)
-        ) AS to_dt
+        ) AS to_dt,
+        ROW_NUMBER() OVER (ORDER BY h.instance_id DESC) AS rn -- Rank by latest instance_id
     FROM msdb.dbo.sysjobhistory h
     JOIN msdb.dbo.sysjobs j ON h.job_id = j.job_id
 )
@@ -39,4 +40,5 @@ LEFT JOIN SSISDB.catalog.executions e
     ON e.start_time BETWEEN DATEADD(SECOND, -5, s.from_dt) AND DATEADD(SECOND, 5, s.to_dt)
 INNER JOIN SSISDB.catalog.operation_messages m 
     ON e.execution_id = m.operation_id 
-    AND m.message_type = 120;
+    AND m.message_type = 120
+WHERE s.rn = 1; -- Get only the last instance_id
