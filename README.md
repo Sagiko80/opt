@@ -1,22 +1,38 @@
 WITH JobHistory AS (
     SELECT 
-        h.instance_id, h.job_id, h.step_id, h.step_name, h.message, 
-        h.run_status, h.run_date, h.run_time, h.run_duration, h.server, 
-        j.originating_server_id, j.name, j.enabled, j.description, 
-        j.start_step_id, j.category_id, j.owner_sid, j.date_created, 
-        j.date_modified, j.version_number,
-        CAST(CONVERT(DATETIME, Cast(run_date AS CHAR(8)) + ' ' + 
-            Stuff(Stuff(RIGHT('000000' + Cast(run_time AS VARCHAR(6)), 6), 3, 0, ':'), 6, 0, ':')) 
+        h.instance_id, 
+        h.job_id, 
+        h.step_id, 
+        h.step_name, 
+        h.message, 
+        h.run_status, 
+        h.run_date, 
+        h.run_time, 
+        h.run_duration, 
+        h.server, 
+        j.originating_server_id, 
+        j.name, 
+        j.enabled, 
+        j.description, 
+        j.start_step_id, 
+        j.category_id, 
+        j.owner_sid, 
+        j.date_created, 
+        j.date_modified, 
+        j.version_number, 
+        CAST(CONVERT(DATETIME, CAST(run_date AS CHAR(8)) + ' ' + 
+            STUFF(STUFF(RIGHT('000000' + CAST(run_time AS VARCHAR(6)), 6), 3, 0, ':'), 6, 0, ':')) 
             AS DATETIME) AS from_dt,
         DATEADD(SECOND, 
-            (run_duration / 10000) * 3600 + ((run_duration % 10000) / 100) * 60 + (run_duration % 100), 
-            CAST(CONVERT(DATETIME, Cast(run_date AS CHAR(8)) + ' ' + 
-            Stuff(Stuff(RIGHT('000000' + Cast(run_time AS VARCHAR(6)), 6), 3, 0, ':'), 6, 0, ':')) 
+            (run_duration / 100) * 60 + RIGHT(run_duration, 2), 
+            CAST(CONVERT(DATETIME, CAST(run_date AS CHAR(8)) + ' ' + 
+            STUFF(STUFF(RIGHT('000000' + CAST(run_time AS VARCHAR(6)), 6), 3, 0, ':'), 6, 0, ':')) 
             AS DATETIME)
         ) AS to_dt,
         ROW_NUMBER() OVER (ORDER BY h.instance_id DESC) AS rn -- Rank by latest instance_id
-    FROM msdb.dbo.sysjobhistory h
-    JOIN msdb.dbo.sysjobs j ON h.job_id = j.job_id
+    FROM msdb.dbo.sysjobhistory h WITH (NOLOCK)
+    JOIN msdb.dbo.sysjobs j WITH (NOLOCK) 
+        ON h.job_id = j.job_id
 )
 SELECT DISTINCT 
     s.instance_id, 
@@ -36,9 +52,9 @@ SELECT DISTINCT
     e.caller_name, 
     e.process_id
 FROM JobHistory AS s
-LEFT JOIN SSISDB.catalog.executions e
-    ON e.start_time BETWEEN DATEADD(SECOND, -5, s.from_dt) AND DATEADD(SECOND, 5, s.to_dt)
-INNER JOIN SSISDB.catalog.operation_messages m 
+LEFT JOIN SSISDB.catalog.executions e WITH (NOLOCK)
+    ON e.start_time BETWEEN DATEADD(MINUTE, -10, s.from_dt) AND DATEADD(MINUTE, 10, s.to_dt)
+INNER JOIN SSISDB.catalog.operation_messages m WITH (NOLOCK) 
     ON e.execution_id = m.operation_id 
     AND m.message_type = 120
 WHERE s.rn = 1; -- Get only the last instance_id
