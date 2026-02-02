@@ -1,18 +1,24 @@
 const fs = require("fs");
 
+// ====== קבצים ======
 const LEAGUE_JSON = "League_Info.json";
 const GAMEWEEK_JSON = "Gameweek_Data.json";
-const PREVIOUS_LEAGUE_JSON = "League_Info_Previous.json"; // מחזור קודם להשוואה
+const PREVIOUS_LEAGUE_JSON = "League_Info_Previous.json"; // אופציונלי
 
-// קריאה של JSONs
+// ====== קריאת JSONs ======
 const leagueInfo = JSON.parse(fs.readFileSync(LEAGUE_JSON));
 const gameweekData = JSON.parse(fs.readFileSync(GAMEWEEK_JSON));
-let prevLeagueInfo = [];
-try { prevLeagueInfo = JSON.parse(fs.readFileSync(PREVIOUS_LEAGUE_JSON)); } catch(e){}
 
-// פונקציות עזר
-function calculateROI(playerPoints, playerCost) {
-    return (playerPoints / (playerCost || 1)) * 10;
+let prevLeagueInfo = [];
+try {
+    prevLeagueInfo = JSON.parse(fs.readFileSync(PREVIOUS_LEAGUE_JSON));
+} catch(e){
+    console.log("לא נמצא קובץ מחזור קודם – השוואת דירוג לא תתבצע");
+}
+
+// ====== פונקציות עזר ======
+function calculateROI(points, cost) {
+    return (points / (cost || 1)) * 10;
 }
 
 function getManagerPreviousRank(managerName) {
@@ -51,27 +57,28 @@ function analyzeManager(manager) {
     };
 }
 
-// מתח בצמרת
+// ====== מתח בצמרת ======
 const sortedByGW = [...leagueInfo].sort((a,b)=>b.gw_points - a.gw_points);
 const topManager = sortedByGW[0];
 const secondManager = sortedByGW[1];
 
-// יצירת סיכום אסטרטגי
+// ====== יצירת סיכום ======
 let summary = `⚽ סיכום אסטרטגי דרמטי – מחזור סופי ⚽\n\n`;
 
 // מתח בצמרת
-summary += `🔥 הקרב על המקום הראשון 🔥\n`;
-summary += `המוביל כרגע: ${topManager.manager} עם ${topManager.gw_points} נקודות`;
-summary += `\nהמנסה לתפוס אותו: ${secondManager.manager} עם ${secondManager.gw_points} נקודות\n\n`;
+summary += `🔥 קרב על המקום הראשון 🔥\n`;
+summary += `המוביל כרגע: ${topManager.manager} עם ${topManager.gw_points} נקודות\n`;
+summary += `המנסה לתפוס אותו: ${secondManager.manager} עם ${secondManager.gw_points} נקודות\n\n`;
 
 // ניתוח מנהלים
 leagueInfo.forEach(manager => {
     const analysis = analyzeManager(manager);
+
     summary += `🧑‍💼 ${analysis.manager} – ${analysis.gw_points} נקודות (דירוג: ${analysis.rank}`;
     if(analysis.rankChange !== null) summary += `, שינוי לעומת מחזור קודם: ${analysis.rankChange>0?`⬆${analysis.rankChange}`:`⬇${-analysis.rankChange}`}`;
     summary += `)\n`;
 
-    // שחקן שמביא ROI הכי גבוה
+    // שחקן מוביל
     summary += `   🌟 תרומת השחקן הטובה ביותר: ${analysis.topPlayer.player} → ${analysis.topPlayer.actual_points} נקודות, ROI: ${analysis.topPlayer.roi.toFixed(2)}\n`;
 
     // החלטות קפטן
@@ -84,7 +91,7 @@ leagueInfo.forEach(manager => {
         summary += `   🃏 צ’יפ שהופעל: ${analysis.chip}\n`;
     }
 
-    // שחקן עם ROI הכי נמוך
+    // שחקן חלש
     summary += `   ⚡ ROI נמוך ביותר: ${analysis.worstPlayer.player} → ${analysis.worstPlayer.actual_points} נקודות, ROI: ${analysis.worstPlayer.roi.toFixed(2)}\n`;
 
     // נקודות שיחה
@@ -95,6 +102,6 @@ leagueInfo.forEach(manager => {
     summary += `\n`;
 });
 
-// שמירה לסיכום
+// ====== שמירת סיכום ======
 fs.writeFileSync("Weekly_Dramatic_Strategic_Summary.txt", summary);
 console.log("✅ סיכום אסטרטגי דרמטי נוצר: Weekly_Dramatic_Strategic_Summary.txt");
