@@ -45,40 +45,58 @@ async function getLivePoints() {
 
 // ------------------------- פונקציות לסיכום -------------------------
 
-function getExtremes(managerName, gameweekData) {
-    const gwPlayers = gameweekData.filter(p => p.manager === managerName);
-    const best = gwPlayers.reduce((a,b)=>a.actual_points>b.actual_points?a:b,{actual_points:0});
-    const worst = gwPlayers.reduce((a,b)=>a.actual_points<b.actual_points?a:b,{actual_points:1000});
+function applySubs(picks, automatic_subs, livePoints, elements) {
+    // יוצרים העתק של ההרכב
+    let finalLineup = picks.map(p => ({ ...p }));
+
+    // מחליפים לפי סדר ההחלפות האוטומטיות
+    automatic_subs.forEach(sub => {
+        const outIdx = finalLineup.findIndex(p => p.element === sub.element_out);
+        if (outIdx !== -1) {
+            finalLineup[outIdx].element = sub.element_in;
+            finalLineup[outIdx].is_captain = finalLineup[outIdx].is_captain || false;
+            finalLineup[outIdx].is_vice_captain = finalLineup[outIdx].is_vice_captain || false;
+        }
+    });
+
+    // מחשבים actual points לאחר החלפות
+    return finalLineup.map(p => ({
+        player: elements[p.element] || "Unknown",
+        captaincy: p.is_captain ? "C" : p.is_vice_captain ? "VC" : "",
+        multiplier: p.multiplier || 1,
+        actual_points: (livePoints[p.element] || 0) * (p.multiplier || 1),
+    }));
+}
+
+function getExtremes(managerName, managerGWData) {
+    const best = managerGWData.reduce((a,b)=>a.actual_points>b.actual_points?a:b,{actual_points:0});
+    const worst = managerGWData.reduce((a,b)=>a.actual_points<b.actual_points?a:b,{actual_points:1000});
     return { best, worst };
 }
 
 function createSummary(leagueInfo, gameweekData) {
-    let summary = `⚽ סיכום מחזור ${GAMEWEEK} ⚽\n\n`;
+    let summary = `⚽ סיכום מחזור ${GAMEWEEK} (Live) ⚽\n\n`;
 
     const sortedByGW = [...leagueInfo].sort((a,b)=>b.gw_points - a.gw_points);
     const topManager = sortedByGW[0];
     const secondManager = sortedByGW[1];
 
-    // מתח בצמרת
     summary += `🔥 הקרב על המקום הראשון! 🔥\n`;
-    summary += `המוביל כרגע: ${topManager.manager} עם ${topManager.gw_points} נקודות במחזור הזה!\n`;
-    summary += `במרחק נגיעה: ${secondManager.manager} עם ${secondManager.gw_points} נקודות.\n\n`;
+    summary += `המוביל כרגע: ${topManager.manager} עם ${topManager.gw_points} נקודות\n`;
+    summary += `במרחק נגיעה: ${secondManager.manager} עם ${secondManager.gw_points} נקודות\n\n`;
 
     leagueInfo.forEach(manager => {
-        const {best, worst} = getExtremes(manager.manager, gameweekData);
+        const managerGWData = gameweekData.filter(p=>p.manager===manager.manager);
+        const { best, worst } = getExtremes(manager.manager, managerGWData);
+
         summary += `🧑‍💼 ${manager.manager} - ${manager.gw_points} נקודות\n`;
 
         if(best.actual_points >= 15) {
             summary += `   🌟 מהלך חכם במיוחד: ${best.player} עם ${best.actual_points} נקודות!\n`;
         }
-        if(worst.actual_points === 0 && worst.player !== "AUTO_SUB") {
-            summary += `   ⚠️ מהלך מסוכן שכשל: ${worst.player} לא צבר נקודות.\n`;
+        if(worst.actual_points === 0) {
+            summary += `   ⚠️ מהלך מסוכן שכשל: ${worst.player} לא צבר נקודות\n`;
         }
-
-        const subs = gameweekData.filter(p=>p.manager===manager.manager && p.player==="AUTO_SUB");
-        subs.forEach(s=>{
-            summary += `   🔄 חילוף אוטומטי: ${s.position}, צבר ${s.actual_points} נקודות\n`;
-        });
 
         if(manager.chip && manager.chip !== "None") {
             summary += `   🃏 צ’יפ שהופעל: ${manager.chip}\n`;
@@ -106,7 +124,6 @@ async function main() {
             const entryData = await getEntryData(entryId);
             const history = entryData.history;
 
-            // League Info
             leagueInfo.push({
                 rank: entry.rank || 0,
                 manager: entry.player_name || "Unknown",
@@ -117,43 +134,20 @@ async function main() {
                 chip: history.chip || "None",
             });
 
-            // Gameweek Data
-            (entryData.picks || []).forEach(p => {
-                const actualPoints = (livePoints[p.element] || 0) * (p.multiplier || 1);
-                gameweekData.push({
-                    manager: entry.player_name,
-                    player: elements[p.element] || "Unknown",
-                    position: p.position || 0,
-                    captaincy: p.is_captain ? "C" : p.is_vice_captain ? "VC" : "",
-                    multiplier: p.multiplier || 1,
-                    element_id: p.element || 0,
-                    actual_points: actualPoints
-                });
-            });
-
-            (entryData.automatic_subs || []).forEach((s, i) => {
-                const actualPoints = (livePoints[s.element_in] || 0);
-                gameweekData.push({
-                    manager: entry.player_name,
-                    player: "AUTO_SUB",
-                    position: `Out:${elements[s.element_out] || "?"} → In:${elements[s.element_in] || "?"}`,
-                    captaincy: `Order ${i + 1}`,
-                    multiplier: "",
-                    element_id: "",
-                    actual_points: actualPoints
-                });
-            });
+            // חישוב הרכב סופי אחרי חילופים
+            const finalLineup = applySubs(entryData.picks, entryData.automatic_subs, livePoints, elements);
+            finalLineup.forEach(p => gameweekData.push({ manager: entry.player_name, ...p }));
         }
 
-        // שמירה JSON
+        // שמירת JSON
         fs.writeFileSync("League_Info.json", JSON.stringify(leagueInfo, null, 2));
         fs.writeFileSync("Gameweek_Data.json", JSON.stringify(gameweekData, null, 2));
         console.log("✅ JSON data exported successfully!");
 
-        // סיכום אנליטי
+        // סיכום אנליטי Live
         const summary = createSummary(leagueInfo, gameweekData);
         fs.writeFileSync("Weekly_Analysis_Summary.txt", summary);
-        console.log("✅ Weekly summary created (Weekly_Analysis_Summary.txt)");
+        console.log("✅ Live summary created (Weekly_Analysis_Summary.txt)");
 
     } catch (error) {
         console.error("Error:", error.message);
