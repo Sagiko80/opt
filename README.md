@@ -2,14 +2,7 @@ const axios = require("axios");
 const fs = require("fs");
 
 const LEAGUE_ID = 922765;
-
-// מושך את המחזור האחרון שהסתיים
-async function getLastFinishedGW() {
-  const res = await axios.get("https://fantasy.premierleague.com/api/bootstrap-static/");
-  const events = res.data.events;
-  const lastFinished = events.filter(e => e.finished).pop();
-  return lastFinished.id;
-}
+const GAMEWEEK = 24; // עדכן למחזור הרצוי
 
 // מושך את כל המשתתפים בליגה
 async function getLeagueEntries() {
@@ -18,9 +11,9 @@ async function getLeagueEntries() {
   return res.data.standings.results;
 }
 
-// מושך את picks + חילופים + היסטוריה למחזור ספציפי
-async function getEntryData(entryId, gameweek) {
-  const picksUrl = `https://fantasy.premierleague.com/api/entry/${entryId}/event/${gameweek}/picks/`;
+// מושך picks + חילופים + היסטוריה למחזור ספציפי
+async function getEntryData(entryId) {
+  const picksUrl = `https://fantasy.premierleague.com/api/entry/${entryId}/event/${GAMEWEEK}/picks/`;
   const historyUrl = `https://fantasy.premierleague.com/api/entry/${entryId}/history/`;
 
   const picksRes = await axios.get(picksUrl);
@@ -29,7 +22,7 @@ async function getEntryData(entryId, gameweek) {
   return {
     picks: picksRes.data.picks || [],
     automatic_subs: picksRes.data.automatic_subs || [],
-    history: (historyRes.data.current || []).find(h => h.event === gameweek) || {},
+    history: (historyRes.data.current || []).find(h => h.event === GAMEWEEK) || {},
   };
 }
 
@@ -42,8 +35,8 @@ async function getElementsDict() {
 }
 
 // מושך ניקוד אמיתי של כל השחקנים במחזור
-async function getLivePoints(gameweek) {
-  const url = `https://fantasy.premierleague.com/api/event/${gameweek}/live/`;
+async function getLivePoints() {
+  const url = `https://fantasy.premierleague.com/api/event/${GAMEWEEK}/live/`;
   const res = await axios.get(url);
   const points = {};
   (res.data.elements || []).forEach(e => {
@@ -52,14 +45,29 @@ async function getLivePoints(gameweek) {
   return points;
 }
 
+// פונקציה ליצירת Summary שבועי (גרסת בסיס)
+function createSummary(leagueInfo, gameweekData) {
+  let summary = `🔥 סיכום מחזור ${GAMEWEEK} 🔥\n\n`;
+
+  leagueInfo.forEach(manager => {
+    const gwPlayers = gameweekData.filter(p => p.manager === manager.manager);
+    const best = gwPlayers.reduce((a, b) => (a.actual_points > b.actual_points ? a : b), { actual_points: 0 });
+    const worst = gwPlayers.reduce((a, b) => (a.actual_points < b.actual_points ? a : b), { actual_points: 1000 });
+
+    summary += `🧑‍💼 ${manager.manager} - ${manager.gw_points} נקודות\n`;
+    summary += `   🔝 הכי טוב: ${best.player} (${best.actual_points})\n`;
+    summary += `   🔻 הכי חלש: ${worst.player} (${worst.actual_points})\n`;
+    summary += `   צ’יפ: ${manager.chip}\n\n`;
+  });
+
+  return summary;
+}
+
 // פונקציה ראשית
 async function main() {
   try {
-    const GAMEWEEK = await getLastFinishedGW();
-    console.log("Using Gameweek:", GAMEWEEK);
-
     const elements = await getElementsDict();
-    const livePoints = await getLivePoints(GAMEWEEK);
+    const livePoints = await getLivePoints();
     const leagueEntries = await getLeagueEntries();
 
     const leagueInfo = [];
@@ -67,7 +75,7 @@ async function main() {
 
     for (const entry of leagueEntries) {
       const entryId = entry.entry;
-      const entryData = await getEntryData(entryId, GAMEWEEK);
+      const entryData = await getEntryData(entryId);
       const history = entryData.history;
 
       // League Info
@@ -115,6 +123,12 @@ async function main() {
     fs.writeFileSync("Gameweek_Data.json", JSON.stringify(gameweekData, null, 2));
 
     console.log("✅ All data exported with live points!");
+
+    // יצירת Summary שבועי
+    const summary = createSummary(leagueInfo, gameweekData);
+    fs.writeFileSync("Weekly_Summary.txt", summary);
+    console.log("✅ Weekly summary created (Weekly_Summary.txt)");
+
   } catch (error) {
     console.error("Error:", error.message);
   }
