@@ -45,24 +45,6 @@ async function getLivePoints() {
   return points;
 }
 
-// פונקציה ליצירת Summary שבועי (גרסת בסיס)
-function createSummary(leagueInfo, gameweekData) {
-  let summary = `🔥 סיכום מחזור ${GAMEWEEK} 🔥\n\n`;
-
-  leagueInfo.forEach(manager => {
-    const gwPlayers = gameweekData.filter(p => p.manager === manager.manager);
-    const best = gwPlayers.reduce((a, b) => (a.actual_points > b.actual_points ? a : b), { actual_points: 0 });
-    const worst = gwPlayers.reduce((a, b) => (a.actual_points < b.actual_points ? a : b), { actual_points: 1000 });
-
-    summary += `🧑‍💼 ${manager.manager} - ${manager.gw_points} נקודות\n`;
-    summary += `   🔝 הכי טוב: ${best.player} (${best.actual_points})\n`;
-    summary += `   🔻 הכי חלש: ${worst.player} (${worst.actual_points})\n`;
-    summary += `   צ’יפ: ${manager.chip}\n\n`;
-  });
-
-  return summary;
-}
-
 // פונקציה ראשית
 async function main() {
   try {
@@ -118,17 +100,11 @@ async function main() {
       });
     }
 
-    // שמירה כ‑JSON
+    // שמירה כ‑JSON בלבד
     fs.writeFileSync("League_Info.json", JSON.stringify(leagueInfo, null, 2));
     fs.writeFileSync("Gameweek_Data.json", JSON.stringify(gameweekData, null, 2));
 
-    console.log("✅ All data exported with live points!");
-
-    // יצירת Summary שבועי
-    const summary = createSummary(leagueInfo, gameweekData);
-    fs.writeFileSync("Weekly_Summary.txt", summary);
-    console.log("✅ Weekly summary created (Weekly_Summary.txt)");
-
+    console.log("✅ All data exported to JSON files successfully!");
   } catch (error) {
     console.error("Error:", error.message);
   }
