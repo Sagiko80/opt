@@ -1,157 +1,100 @@
-const axios = require("axios");
 const fs = require("fs");
 
-const LEAGUE_ID = 922765;
-const GAMEWEEK = 24; // עדכן למחזור הרצוי
+const LEAGUE_JSON = "League_Info.json";
+const GAMEWEEK_JSON = "Gameweek_Data.json";
+const PREVIOUS_LEAGUE_JSON = "League_Info_Previous.json"; // מחזור קודם להשוואה
 
-// ------------------------- פונקציות עזר -------------------------
+// קריאה של JSONs
+const leagueInfo = JSON.parse(fs.readFileSync(LEAGUE_JSON));
+const gameweekData = JSON.parse(fs.readFileSync(GAMEWEEK_JSON));
+let prevLeagueInfo = [];
+try { prevLeagueInfo = JSON.parse(fs.readFileSync(PREVIOUS_LEAGUE_JSON)); } catch(e){}
 
-async function getLeagueEntries() {
-    const url = `https://fantasy.premierleague.com/api/leagues-classic/${LEAGUE_ID}/standings/`;
-    const res = await axios.get(url);
-    return res.data.standings.results;
+// פונקציות עזר
+function calculateROI(playerPoints, playerCost) {
+    return (playerPoints / (playerCost || 1)) * 10;
 }
 
-async function getEntryData(entryId) {
-    const picksUrl = `https://fantasy.premierleague.com/api/entry/${entryId}/event/${GAMEWEEK}/picks/`;
-    const historyUrl = `https://fantasy.premierleague.com/api/entry/${entryId}/history/`;
+function getManagerPreviousRank(managerName) {
+    const prev = prevLeagueInfo.find(m => m.manager === managerName);
+    return prev ? prev.rank : null;
+}
 
-    const picksRes = await axios.get(picksUrl);
-    const historyRes = await axios.get(historyUrl);
+function analyzeManager(manager) {
+    const managerGWData = gameweekData.filter(p => p.manager === manager.manager);
+
+    // הוספת ROI לכל שחקן
+    const playersWithROI = managerGWData
+        .map(p => ({ ...p, roi: calculateROI(p.actual_points, p.cost || 1) }))
+        .sort((a, b) => b.roi - a.roi);
+
+    const topPlayer = playersWithROI[0];
+    const worstPlayer = playersWithROI[playersWithROI.length - 1];
+
+    const captain = managerGWData.find(p => p.captaincy === "C");
+    const viceCaptain = managerGWData.find(p => p.captaincy === "VC");
+
+    const prevRank = getManagerPreviousRank(manager.manager);
+    const rankChange = prevRank ? prevRank - manager.rank : null;
 
     return {
-        picks: picksRes.data.picks || [],
-        automatic_subs: picksRes.data.automatic_subs || [],
-        history: (historyRes.data.current || []).find(h => h.event === GAMEWEEK) || {},
+        manager: manager.manager,
+        rank: manager.rank,
+        rankChange,
+        gw_points: manager.gw_points,
+        topPlayer,
+        worstPlayer,
+        captain,
+        viceCaptain,
+        chip: manager.chip,
+        playersWithROI
     };
 }
 
-async function getElementsDict() {
-    const res = await axios.get("https://fantasy.premierleague.com/api/bootstrap-static/");
-    const dict = {};
-    res.data.elements.forEach(e => dict[e.id] = e.web_name);
-    return dict;
-}
+// מתח בצמרת
+const sortedByGW = [...leagueInfo].sort((a,b)=>b.gw_points - a.gw_points);
+const topManager = sortedByGW[0];
+const secondManager = sortedByGW[1];
 
-async function getLivePoints() {
-    const url = `https://fantasy.premierleague.com/api/event/${GAMEWEEK}/live/`;
-    const res = await axios.get(url);
-    const points = {};
-    (res.data.elements || []).forEach(e => {
-        points[e.id] = e.stats.total_points || 0;
-    });
-    return points;
-}
+// יצירת סיכום אסטרטגי
+let summary = `⚽ סיכום אסטרטגי דרמטי – מחזור סופי ⚽\n\n`;
 
-// ------------------------- פונקציות לסיכום -------------------------
+// מתח בצמרת
+summary += `🔥 הקרב על המקום הראשון 🔥\n`;
+summary += `המוביל כרגע: ${topManager.manager} עם ${topManager.gw_points} נקודות`;
+summary += `\nהמנסה לתפוס אותו: ${secondManager.manager} עם ${secondManager.gw_points} נקודות\n\n`;
 
-function applySubs(picks, automatic_subs, livePoints, elements) {
-    // יוצרים העתק של ההרכב
-    let finalLineup = picks.map(p => ({ ...p }));
+// ניתוח מנהלים
+leagueInfo.forEach(manager => {
+    const analysis = analyzeManager(manager);
+    summary += `🧑‍💼 ${analysis.manager} – ${analysis.gw_points} נקודות (דירוג: ${analysis.rank}`;
+    if(analysis.rankChange !== null) summary += `, שינוי לעומת מחזור קודם: ${analysis.rankChange>0?`⬆${analysis.rankChange}`:`⬇${-analysis.rankChange}`}`;
+    summary += `)\n`;
 
-    // מחליפים לפי סדר ההחלפות האוטומטיות
-    automatic_subs.forEach(sub => {
-        const outIdx = finalLineup.findIndex(p => p.element === sub.element_out);
-        if (outIdx !== -1) {
-            finalLineup[outIdx].element = sub.element_in;
-            finalLineup[outIdx].is_captain = finalLineup[outIdx].is_captain || false;
-            finalLineup[outIdx].is_vice_captain = finalLineup[outIdx].is_vice_captain || false;
-        }
-    });
+    // שחקן שמביא ROI הכי גבוה
+    summary += `   🌟 תרומת השחקן הטובה ביותר: ${analysis.topPlayer.player} → ${analysis.topPlayer.actual_points} נקודות, ROI: ${analysis.topPlayer.roi.toFixed(2)}\n`;
 
-    // מחשבים actual points לאחר החלפות
-    return finalLineup.map(p => ({
-        player: elements[p.element] || "Unknown",
-        captaincy: p.is_captain ? "C" : p.is_vice_captain ? "VC" : "",
-        multiplier: p.multiplier || 1,
-        actual_points: (livePoints[p.element] || 0) * (p.multiplier || 1),
-    }));
-}
-
-function getExtremes(managerName, managerGWData) {
-    const best = managerGWData.reduce((a,b)=>a.actual_points>b.actual_points?a:b,{actual_points:0});
-    const worst = managerGWData.reduce((a,b)=>a.actual_points<b.actual_points?a:b,{actual_points:1000});
-    return { best, worst };
-}
-
-function createSummary(leagueInfo, gameweekData) {
-    let summary = `⚽ סיכום מחזור ${GAMEWEEK} (Live) ⚽\n\n`;
-
-    const sortedByGW = [...leagueInfo].sort((a,b)=>b.gw_points - a.gw_points);
-    const topManager = sortedByGW[0];
-    const secondManager = sortedByGW[1];
-
-    summary += `🔥 הקרב על המקום הראשון! 🔥\n`;
-    summary += `המוביל כרגע: ${topManager.manager} עם ${topManager.gw_points} נקודות\n`;
-    summary += `במרחק נגיעה: ${secondManager.manager} עם ${secondManager.gw_points} נקודות\n\n`;
-
-    leagueInfo.forEach(manager => {
-        const managerGWData = gameweekData.filter(p=>p.manager===manager.manager);
-        const { best, worst } = getExtremes(manager.manager, managerGWData);
-
-        summary += `🧑‍💼 ${manager.manager} - ${manager.gw_points} נקודות\n`;
-
-        if(best.actual_points >= 15) {
-            summary += `   🌟 מהלך חכם במיוחד: ${best.player} עם ${best.actual_points} נקודות!\n`;
-        }
-        if(worst.actual_points === 0) {
-            summary += `   ⚠️ מהלך מסוכן שכשל: ${worst.player} לא צבר נקודות\n`;
-        }
-
-        if(manager.chip && manager.chip !== "None") {
-            summary += `   🃏 צ’יפ שהופעל: ${manager.chip}\n`;
-        }
-
-        summary += `\n`;
-    });
-
-    return summary;
-}
-
-// ------------------------- פונקציה ראשית -------------------------
-
-async function main() {
-    try {
-        const elements = await getElementsDict();
-        const livePoints = await getLivePoints();
-        const leagueEntries = await getLeagueEntries();
-
-        const leagueInfo = [];
-        const gameweekData = [];
-
-        for (const entry of leagueEntries) {
-            const entryId = entry.entry;
-            const entryData = await getEntryData(entryId);
-            const history = entryData.history;
-
-            leagueInfo.push({
-                rank: entry.rank || 0,
-                manager: entry.player_name || "Unknown",
-                total_points: entry.total || 0,
-                gw_points: history.points || 0,
-                team_value: history.value ? history.value / 10 : 0,
-                transfers_cost: history.event_transfers_cost || 0,
-                chip: history.chip || "None",
-            });
-
-            // חישוב הרכב סופי אחרי חילופים
-            const finalLineup = applySubs(entryData.picks, entryData.automatic_subs, livePoints, elements);
-            finalLineup.forEach(p => gameweekData.push({ manager: entry.player_name, ...p }));
-        }
-
-        // שמירת JSON
-        fs.writeFileSync("League_Info.json", JSON.stringify(leagueInfo, null, 2));
-        fs.writeFileSync("Gameweek_Data.json", JSON.stringify(gameweekData, null, 2));
-        console.log("✅ JSON data exported successfully!");
-
-        // סיכום אנליטי Live
-        const summary = createSummary(leagueInfo, gameweekData);
-        fs.writeFileSync("Weekly_Analysis_Summary.txt", summary);
-        console.log("✅ Live summary created (Weekly_Analysis_Summary.txt)");
-
-    } catch (error) {
-        console.error("Error:", error.message);
+    // החלטות קפטן
+    if(analysis.captain) {
+        summary += `   👑 קפטן: ${analysis.captain.player} +${analysis.captain.actual_points} נקודות\n`;
     }
-}
 
-main();
+    // צ’יפ שהופעל
+    if(analysis.chip && analysis.chip !== "None") {
+        summary += `   🃏 צ’יפ שהופעל: ${analysis.chip}\n`;
+    }
+
+    // שחקן עם ROI הכי נמוך
+    summary += `   ⚡ ROI נמוך ביותר: ${analysis.worstPlayer.player} → ${analysis.worstPlayer.actual_points} נקודות, ROI: ${analysis.worstPlayer.roi.toFixed(2)}\n`;
+
+    // נקודות שיחה
+    summary += `   📊 נקודות לדיון:\n`;
+    if(analysis.topPlayer.roi > 2) summary += `      - מהלך חכם עם שחקן בעל ROI גבוה.\n`;
+    if(analysis.worstPlayer.roi < 0.5) summary += `      - החלטה שהובילה לאובדן נקודות משמעותי.\n`;
+    if(analysis.captain && analysis.captain.actual_points < 5) summary += `      - קפטן פספס את הציפיות.\n`;
+    summary += `\n`;
+});
+
+// שמירה לסיכום
+fs.writeFileSync("Weekly_Dramatic_Strategic_Summary.txt", summary);
+console.log("✅ סיכום אסטרטגי דרמטי נוצר: Weekly_Dramatic_Strategic_Summary.txt");
